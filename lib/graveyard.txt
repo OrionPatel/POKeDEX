@@ -1,0 +1,575 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pokedex_v3/models.dart';
+import 'package:pokedex_v3/service.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+List<String> pokeTypes = ['all', 'fire', 'grass', 'ice'];
+String currentType = 'all';
+
+List<Map<String, dynamic>> firePokemonUrl = [];
+List<Map<String, dynamic>> grassPokemonUrl = [];
+List<Map<String, dynamic>> icePokemonUrl = [];
+List<Map<String, dynamic>> firePokemonDetails = [];
+List<Map<String, dynamic>> grassPokemonDetails = [];
+List<Map<String, dynamic>> icePokemonDetails = [];
+List<Map<String, dynamic>> allPokemonUrl = [];
+
+class _HomeScreenState extends State<HomeScreen> {
+  Future<void> _initialize() async {
+    final directory = await getApplicationCacheDirectory();
+
+    final firefile = File('${directory.path}/firelist.json');
+    final grassfile = File('${directory.path}/grasslist.json');
+    final icefile = File('${directory.path}/icelist.json');
+
+    List<dynamic> firecontent = jsonDecode(await firefile.readAsString());
+    List<dynamic> grasscontent = jsonDecode(await grassfile.readAsString());
+    List<dynamic> icecontent = jsonDecode(await icefile.readAsString());
+
+    for (var item in firecontent) {
+      if (item is Map<dynamic, dynamic> && item.containsKey('pokemon')) {
+        Map<dynamic, dynamic> pokemonMap = item['pokemon'];
+        String name = pokemonMap['name'];
+        String url = pokemonMap['url'];
+        firePokemonUrl.add({
+          'name': name,
+          'url': url,
+        });
+      }
+    }
+    for (var item in grasscontent) {
+      if (item is Map<dynamic, dynamic> && item.containsKey('pokemon')) {
+        Map<dynamic, dynamic> pokemonMap = item['pokemon'];
+        String name = pokemonMap['name'];
+        String url = pokemonMap['url'];
+        grassPokemonUrl.add({
+          'name': name,
+          'url': url,
+        });
+      }
+    }
+    for (var item in icecontent) {
+      if (item is Map<dynamic, dynamic> && item.containsKey('pokemon')) {
+        Map<dynamic, dynamic> pokemonMap = item['pokemon'];
+        String name = pokemonMap['name'];
+        String url = pokemonMap['url'];
+        icePokemonUrl.add({
+          'name': name,
+          'url': url,
+        });
+      }
+    }
+    allPokemonUrl = firePokemonUrl + grassPokemonUrl + icePokemonUrl;
+
+    //   final List<String> filetypes = ['fire', 'grass', 'ice'];
+    //   for (var types in filetypes) {
+    //     final file = File('${directory.path}/${types}list.json');
+    //     if (!await file.exists()) {
+    //       print('HOME: no connection and no ${types} data');
+    //     } else {
+    //       print('HOME: file of ${types} exists');
+    //     }
+    //   }
+  }
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+
+    _initialize();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            fit: BoxFit.fill,
+            image: AssetImage('assets/background.png'),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 30),
+            Container(
+              height: 50,
+              decoration: BoxDecoration(
+                  color: const Color.fromARGB(0, 0, 0, 0).withOpacity(0)),
+              child: const Center(
+                child: Text(
+                  'POKEDEX',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 40),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Container(
+                height: 60,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2.0),
+                  borderRadius: BorderRadius.circular(20),
+                  color: const Color.fromARGB(198, 0, 11, 50).withOpacity(0),
+                ),
+                child: TextFormField(
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Search',
+                    labelStyle: TextStyle(color: Colors.white, fontSize: 20),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(8),
+                itemCount: 10, // Use the length of fetched Pokemon list
+                itemBuilder: (BuildContext context, index) {
+                  return FutureBuilder(
+                    future: fetchPokemon(
+                        allPokemonUrl[index]['url']), // Fetch Pokemon data
+                    builder: (context, AsyncSnapshot<Pokemon> snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return CircularProgressIndicator(
+                          color: Colors.white.withOpacity(0),
+                        ); // Show a loading indicator while fetching data
+                      } else if (snapshot.hasError) {
+                        return Text('Error: ${snapshot.error}');
+                      } else {
+                        return ListItem(
+                            pokemon: snapshot
+                                .data!); // Pass fetched Pokemon data to ListItem
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+List<Pokemon> allPokemon = [];
+
+
+class ListItem extends StatefulWidget {
+  final Pokemon pokemon;
+  ListItem({required this.pokemon, super.key});
+  
+  @override
+  State<ListItem> createState() => _ListItemState(pokemon: pokemon);
+}
+
+class _ListItemState extends State<ListItem> {
+  // final String type;
+  final Pokemon pokemon;
+  _ListItemState({required this.pokemon});
+
+  double containerHeight = 200;
+  String currentImage = 'assets/card.png';
+
+  Future<void> _getpokemon() async {
+    for (var _pokemon in allPokemonUrl) {
+      Pokemon pokemon = await fetchPokemon(_pokemon['url']);
+      allPokemon.add(pokemon);
+    }
+  }
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    _getpokemon();
+  }
+
+  void toggleImage() {
+    setState(() {
+      currentImage = currentImage == 'assets/card.png'
+          ? 'assets/card_expanded.png'
+          : 'assets/card.png';
+      containerHeight = containerHeight == 200 ? 400 : 200;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        toggleImage();
+      },
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        height: containerHeight,
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            fit: BoxFit.fitWidth,
+            image: AssetImage(currentImage),
+          ),
+        ),
+        child: Container(
+          padding: EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    SizedBox(width: 20),
+                    Text(
+                      pokemon.name,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    Image.network(pokemon.imageUrl),
+                  ],
+                ),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+-----------------------------------------------------------------------------------
+
+
+// Future<void> savePokemon(Pokemon pokemon) async {
+//   final String jsonString = jsonEncode(pokemon.toJson());
+//   final directory = await getApplicationCacheDirectory();
+//   final file = File('${directory.path}/pokemon/${pokemon.name}.json');
+//   await file.writeAsString(jsonString);
+// }
+
+// Future<Pokemon?> loadPokemon(String name) async {
+//   final directory = await getApplicationCacheDirectory();
+//   final file = File('${directory.path}/pokemon/${name}.json');
+//   final Map<String, dynamic> jsonData = jsonDecode(await file.readAsString());
+//   Pokemon pokemon = Pokemon.fromJson(jsonData);
+//   return pokemon;
+// } 
+
+
+
+
+
+
+
+
+
+
+
+
+
+// static const String _baseUrl = 'https://pokeapi.co/api/v2';
+
+//   Future<List<dynamic>> loadLocalFirePokemonData() async {
+//     try {
+//       final directory = await getApplicationDocumentsDirectory();
+//       final file = File('${directory.path}/firePokemon_data.json');
+//       final jsonString = await file.readAsString();
+//       final List<dynamic> firePokemonList = jsonDecode(jsonString);
+
+//       // Print the number of Pokémon in the file
+//       print('Number of Pokémon in the file: ${firePokemonList.length}');
+//       //print(firePokemonList);
+//       return firePokemonList;
+//       // List<Pokemon> _firePokemonList =
+//       //     firePokemonList.map((json) => Pokemon.fromJson(json)).toList();
+//       // print(_firePokemonList);
+//     } catch (e) {
+//       throw ('Error loading local Pokemon data: $e');
+//     }
+//   }
+
+//   Future<List<dynamic>> loadLocalGrassPokemonData() async {
+//     try {
+//       final directory = await getApplicationDocumentsDirectory();
+//       final file = File('${directory.path}/grassPokemon_data.json');
+//       final jsonString = await file.readAsString();
+//       final List<dynamic> grassPokemonList = jsonDecode(jsonString);
+
+//       // Print the number of Pokémon in the file
+//       print('Number of Pokémon in the file: ${grassPokemonList.length}');
+//       //print(firePokemonList);
+//       return grassPokemonList;
+//       // List<Pokemon> _firePokemonList =
+//       //     firePokemonList.map((json) => Pokemon.fromJson(json)).toList();
+//       // print(_firePokemonList);
+//     } catch (e) {
+//       throw ('Error loading local Pokemon data: $e');
+//     }
+//   }
+
+//   Future<List<dynamic>> loadLocalIcePokemonData() async {
+//     try {
+//       final directory = await getApplicationDocumentsDirectory();
+//       final file = File('${directory.path}/icePokemon_data.json');
+//       final jsonString = await file.readAsString();
+//       final List<dynamic> icePokemonList = jsonDecode(jsonString);
+
+//       // Print the number of Pokémon in the file
+//       print('Number of Pokémon in the file: ${icePokemonList.length}');
+//       //print(firePokemonList);
+//       return icePokemonList;
+//       // List<Pokemon> _firePokemonList =
+//       //     firePokemonList.map((json) => Pokemon.fromJson(json)).toList();
+//       // print(_firePokemonList);
+//     } catch (e) {
+//       throw ('Error loading local Pokemon data: $e');
+//     }
+//   }
+// Future<List<Pokemon>> fetchFireType() async {
+//     try {
+//       Dio dio = Dio();
+
+//       dio.options.baseUrl = _baseUrl;
+//       dio.options.queryParameters = {'limit': 10};
+//       dio.options.validateStatus = (status) => true; // Allow all status codes
+//       dio.interceptors.add(LogInterceptor(
+//           responseBody: true)); // Add this line to see the response log
+//       // Disable SSL verification
+//       (dio.httpClientAdapter as DefaultHttpClientAdapter).onHttpClientCreate =
+//           (client) {
+//         client.badCertificateCallback =
+//             (X509Certificate cert, String host, int port) => true;
+//         return client;
+//       };
+
+//       final response = await dio.get('https://pokeapi.co/api/v2/type/fire/');
+//       if (response.statusCode == 200) {
+//         final jsonData = response.data;
+//         final firePokemonList = jsonData['pokemon'] as List<dynamic>;
+
+//         // Create a list to store Pokemon objects
+//         List<Pokemon> firePokemonDetails = [];
+
+//         // Iterate through each Pokemon in the list
+//         for (var pokemon in firePokemonList) {
+//           final pokemonUrl = pokemon['pokemon']['url'];
+
+//           // Fetch details for each Pokemon
+//           final pokemonDetailsResponse = await dio.get(pokemonUrl);
+//           if (pokemonDetailsResponse.statusCode == 200) {
+//             final pokemonDetailJson = pokemonDetailsResponse.data;
+
+//             // Create a Pokemon object from fetched JSON data
+//             final pokemon = Pokemon.fromJson(pokemonDetailJson);
+
+//             // Add the Pokemon object to the list
+//             firePokemonDetails.add(pokemon);
+//           } else {
+//             throw Exception('Failed to fetch Pokémon details');
+//           }
+//         }
+
+//         // await _savePokemonLocally(firePokemonDetails);
+//         return firePokemonDetails;
+//         // return firePokemonDetails;
+//       } else {
+//         throw Exception('Failed to fetch fire type Pokémon');
+//       }
+//     } catch (e) {
+//       throw Exception('Failed to fetch fire type Pokémon: $e');
+//     }
+//   }
+
+//   Future<void> _saveFirePokemonLocally(List<Pokemon> pokemonList) async {
+//     final directory = await getApplicationCacheDirectory();
+//     final file = File('${directory.path}/firePokemon_data.json');
+//     final List<Map<String, dynamic>> pokemonJsonList =
+//         pokemonList.map((pokemon) => pokemon.toJson()).toList();
+//     await file.writeAsString(jsonEncode(pokemonJsonList));
+//   }
+
+//   void _downloadData() async {
+//     final connectivityResult = await Connectivity().checkConnectivity();
+
+//     if (connectivityResult == ConnectivityResult.none) {
+//       return;
+//     } else {
+//       try {
+//         List<Pokemon> firePokemonDetails = await PokeAPI().fetchFireType();
+//         await _saveFirePokemonLocally(firePokemonDetails);
+//       } catch (e) {
+//         print('Error: $e');
+//       }
+//     }
+//   }
+// }
+
+// Future<void> _saveFirePokemonLocally(List<Pokemon> pokemonList) async {
+//   final directory = await getApplicationCacheDirectory();
+//   final file = File('${directory.path}/firePokemon_data.json');
+//   final List<Map<String, dynamic>> pokemonJsonList =
+//       pokemonList.map((pokemon) => pokemon.toJson()).toList();
+//   await file.writeAsString(jsonEncode(pokemonJsonList));
+// }
+
+// void _downloadData() async {
+//   final connectivityResult = await Connectivity().checkConnectivity();
+
+//   if (connectivityResult == ConnectivityResult.none) {
+//     return;
+//   } else {
+//     try {
+//       List<Pokemon> firePokemonDetails = await PokeAPI().fetchFireType();
+//       await _saveFirePokemonLocally(firePokemonDetails);
+//     } catch (e) {
+//       print('Error: $e');
+//     }
+//   }
+// }
+
+
+// Future<Pokemon?> getPokemon(String url) async {
+//   try {
+//     Dio dio = Dio();
+
+//     // Setup Dio options and interceptors
+//     dio.options.baseUrl = 'https://pokeapi.co/api/v2';
+//     // dio.options.queryParameters = {'limit': 10};
+//     dio.options.validateStatus = (status) => true;
+//     dio.interceptors.add(LogInterceptor(responseBody: true));
+
+//     // Disable SSL verification (not recommended for production)
+//     (dio.httpClientAdapter as DefaultHttpClientAdapter).onHttpClientCreate =
+//         (client) {
+//       client.badCertificateCallback =
+//           (X509Certificate cert, String host, int port) => true;
+//       return client;
+//     };
+
+//     final response = await dio.get(url);
+//     if (response.statusCode == 200) {
+//       final jsonData = jsonDecode(response.data);
+
+//       // Check if required fields are present and non-null
+//       if (jsonData['name'] != null &&
+//           jsonData['sprites'] != null &&
+//           jsonData['types'] != null &&
+//           jsonData['id'] != null &&
+//           jsonData['species'] != null &&
+//           jsonData['sprites']['front_default'] != null &&
+//           jsonData['types'][0]['type']['name'] != null &&
+//           jsonData['species']['url'] != null) {
+//         final String name = jsonData['name'];
+//         final String imageUrl = jsonData['sprites']['front_default'];
+//         final String type = jsonData['types'][0]['type']['name'];
+//         final int number = jsonData['id'];
+//         final String speciesUrl = jsonData['species']['url'];
+
+//         final descriptionResponse = await dio.get(speciesUrl);
+//         if (descriptionResponse.statusCode == 200) {
+//           final speciesData = jsonDecode(descriptionResponse.data);
+//           final String description = speciesData['flavor_text_entries'][0]['flavor_text'];
+
+//           return Pokemon(
+//             name: name,
+//             imageUrl: imageUrl,
+//             type: type,
+//             number: number,
+//             description: description,
+//           );
+//         } else {
+//           throw Exception(
+//               'Failed to fetch species data: ${descriptionResponse.statusCode}');
+//         }
+//       } else {
+//         throw Exception('Incomplete Pokemon data');
+//       }
+//     } else {
+//       throw Exception('Failed to fetch Pokemon data: ${response.statusCode}');
+//     }
+//   } on DioError catch (e) {
+//     // Handle Dio specific errors
+//     throw Exception('Dio Error: ${e.message}');
+//   } catch (e) {
+//     // Handle other exceptions
+//     throw Exception('Error: $e');
+//   }
+// }
+
+// Future<Pokemon?> getPokemon(String url) async {
+//   try {
+//     Dio dio = Dio();
+
+//     final response = await dio.get(url);
+//     if (response.statusCode == 200) {
+//       final Map<String, dynamic> data = response.data;
+//       final String name = data['name'];
+//       final String imageUrl = data['sprites']['front_default'];
+//       final String type = data['types'][0]['type']['name'];
+//       final int number = data['id'];
+//       final String speciesUrl = data['species']['url'];
+
+//       final descriptionResponse = await dio.get(speciesUrl);
+//       if (descriptionResponse.statusCode == 200) {
+//         final Map<String, dynamic> speciesData = descriptionResponse.data;
+//         final String description =
+//             speciesData['flavor_text_entries'][0]['flavor_text'];
+
+//         Pokemon pokemon = Pokemon(
+//           name: name,
+//           imageUrl: imageUrl,
+//           type: type,
+//           number: number,
+//           description: description,
+//         );
+//         return pokemon;
+//       } else {
+//         throw Exception(
+//           'Failed to fetch species data: ${descriptionResponse.statusCode}',
+//         );
+//       }
+//     } else {
+//       throw Exception('Failed to fetch Pokemon data: ${response.statusCode}');
+//     }
+//   } on DioError catch (e) {
+//     // Handle Dio specific errors
+//     throw Exception('Dio Error: ${e.message}');
+//   } catch (e) {
+//     // Handle other exceptions
+//     throw Exception('Error: $e');
+//   }
+// }
+
+
+
+
+
+
+
+
+
